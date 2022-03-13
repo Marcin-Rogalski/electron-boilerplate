@@ -1,0 +1,12 @@
+{
+    "extensions": [
+        ".js"
+    ],
+    "watch": [
+        "dist/main.js",
+        "dist/windows/*/preload.js"
+    ],
+    "execMap": {
+        "js": "node_modules/.bin/electron"
+    }
+}
