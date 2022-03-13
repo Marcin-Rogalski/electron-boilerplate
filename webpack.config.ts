@@ -22,7 +22,7 @@ export default (env: any, args: any) => {
             module: {
                 rules: [
                     {
-                        test: /\.ts/,
+                        test: /\.ts$/,
                         loader: 'ts-loader'
                     }
                 ]
@@ -52,14 +52,14 @@ const windows = (mode: Configuration['mode']): Configuration[] => {
             const path = resolve(__dirname, `src/windows/${window}`)
             const files = readdirSync(path)
 
-            if (files.includes('renderer.ts')) {
+            if (files.includes('renderer.tsx')) {
                 const configs: Configuration[] = [
                     {
                         name: `window-${window}-renderer`,
                         mode,
                         target: 'electron-renderer',
                         entry: {
-                            renderer: `./src/windows/${window}/renderer.ts`
+                            renderer: `./src/windows/${window}/renderer.tsx`
                         },
                         output: {
                             filename: '[name].js',
@@ -68,13 +68,25 @@ const windows = (mode: Configuration['mode']): Configuration[] => {
                         module: {
                             rules: [
                                 {
-                                    test: /\.ts/,
-                                    loader: 'ts-loader'
+                                    test: /\.ts(x)?$/,
+                                    use: {
+                                        loader: 'babel-loader',
+                                        options: {
+                                            plugins: [
+                                                '@babel/plugin-proposal-class-properties'
+                                            ],
+                                            presets: [
+                                                '@babel/preset-env',
+                                                '@babel/preset-react',
+                                                '@babel/preset-typescript'
+                                            ]
+                                        }
+                                    }
                                 }
                             ]
                         },
                         resolve: {
-                            extensions: ['.js', '.ts', '.json']
+                            extensions: ['.js', '.jsx', '.ts', '.tsx', '.json']
                         },
                         plugins: [
                             new CopyPlugin({
@@ -99,7 +111,7 @@ const windows = (mode: Configuration['mode']): Configuration[] => {
                         module: {
                             rules: [
                                 {
-                                    test: /\.ts/,
+                                    test: /\.ts$/,
                                     loader: 'ts-loader'
                                 }
                             ]
