@@ -6,8 +6,7 @@ const answer = (window as any).isItWorking
 
 const App = () => (
     <div>
-        <span>{question}</span>
-        <span>{answer}</span>
+        <span>{question}</span> <span>{answer}!!</span>
     </div>
 )
 

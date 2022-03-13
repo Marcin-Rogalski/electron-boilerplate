@@ -1,7 +1,10 @@
 import { resolve } from 'path'
-import { readdirSync } from 'fs'
+import { readdirSync, readFileSync } from 'fs'
 import { Configuration } from 'webpack'
 import CopyPlugin from 'copy-webpack-plugin'
+import nodeExternals from 'webpack-node-externals'
+import 'webpack-dev-server'
+import { env } from 'process'
 
 export default (env: any, args: any) => {
     const mode: Configuration['mode'] = args.mode ?? 'development'
@@ -40,90 +43,134 @@ export default (env: any, args: any) => {
 }
 
 const windows = (mode: Configuration['mode']): Configuration[] => {
-    const templatePath = resolve(__dirname, 'resources/view_template.html')
+    const templatePath = resolve(__dirname, 'resources/view_template.prod.html')
     const windowsPath = resolve(__dirname, 'src/windows')
+    const windows: { name: string; preload: boolean }[] = []
 
-    return readdirSync(windowsPath)
-        .flatMap(window => {
-            const viewPath = resolve(
-                __dirname,
-                `dist/windows/${window}/view.html`
-            )
-            const path = resolve(__dirname, `src/windows/${window}`)
-            const files = readdirSync(path)
+    readdirSync(windowsPath).flatMap(window => {
+        const path = resolve(__dirname, `src/windows/${window}`)
+        const files = readdirSync(path)
 
-            if (files.includes('renderer.tsx')) {
-                const configs: Configuration[] = [
-                    {
-                        name: `window-${window}-renderer`,
-                        mode,
-                        target: 'electron-renderer',
-                        entry: {
-                            renderer: `./src/windows/${window}/renderer.tsx`
-                        },
-                        output: {
-                            filename: '[name].js',
-                            path: resolve(__dirname, `dist/windows/${window}`)
-                        },
-                        module: {
-                            rules: [
-                                {
-                                    test: /\.ts(x)?$/,
-                                    use: {
-                                        loader: 'babel-loader',
-                                        options: {
-                                            plugins: [
-                                                '@babel/plugin-proposal-class-properties'
-                                            ],
-                                            presets: [
-                                                '@babel/preset-env',
-                                                '@babel/preset-react',
-                                                '@babel/preset-typescript'
-                                            ]
-                                        }
-                                    }
-                                }
+        if (files.includes('renderer.tsx')) {
+            windows.push({
+                name: window,
+                preload: files.includes('preload.ts')
+            })
+        }
+    })
+
+    const renderer: Configuration = {
+        name: `renderer`,
+        mode,
+        target: 'electron-renderer',
+        entry: windows.reduce(
+            (entry, window) => ({
+                ...entry,
+                [window.name]: {
+                    import: `./src/windows/${window.name}/renderer.tsx`,
+                    filename: `${window.name}/renderer.js`
+                }
+            }),
+            {}
+        ),
+        output: {
+            filename: '[name].js',
+            path: resolve(__dirname, `dist/windows`),
+            libraryTarget: 'commonjs'
+        },
+        module: {
+            rules: [
+                {
+                    test: /\.ts(x)?$/,
+                    exclude: /node_modules/,
+                    use: {
+                        loader: 'babel-loader',
+                        options: {
+                            plugins: [
+                                '@babel/plugin-proposal-class-properties'
+                            ],
+                            presets: [
+                                '@babel/preset-env',
+                                '@babel/preset-react',
+                                '@babel/preset-typescript'
                             ]
-                        },
-                        resolve: {
-                            extensions: ['.js', '.jsx', '.ts', '.tsx', '.json']
-                        },
-                        plugins: [
-                            new CopyPlugin({
-                                patterns: [{ from: templatePath, to: viewPath }]
-                            })
-                        ]
-                    }
-                ]
-
-                if (files.includes('preload.ts')) {
-                    configs.push({
-                        name: `window-${window}-preload`,
-                        mode,
-                        target: 'electron-main',
-                        entry: {
-                            preload: `./src/windows/${window}/preload.ts`
-                        },
-                        output: {
-                            filename: '[name].js',
-                            path: resolve(__dirname, `dist/windows/${window}`)
-                        },
-                        module: {
-                            rules: [
-                                {
-                                    test: /\.ts$/,
-                                    loader: 'ts-loader'
-                                }
-                            ]
-                        },
-                        resolve: {
-                            extensions: ['.js', '.ts', '.json']
                         }
-                    })
+                    }
+                }
+            ]
+        },
+        resolve: {
+            extensions: ['.js', '.jsx', '.ts', '.tsx', '.json']
+        },
+        plugins: [
+            new CopyPlugin({
+                patterns: windows.map(window => ({
+                    from: templatePath,
+                    to: resolve(
+                        __dirname,
+                        `dist/windows/${window.name}/view.html`
+                    )
+                }))
+            })
+        ],
+        devServer: {
+            static: resolve(__dirname, 'resources/public'),
+            onAfterSetupMiddleware: function (devServer) {
+                if (!devServer?.app) {
+                    throw new Error('webpack-dev-server is not defined')
                 }
 
-                return configs
+                const view_template = readFileSync(
+                    resolve(__dirname, 'resources/view_template.dev.html'),
+                    'utf-8'
+                )
+
+                devServer.app.get('/:window', (req, res) =>
+                    res.send(
+                        view_template.replace('<<window>>', req.params.window)
+                    )
+                )
             }
-        })
-        .filter(configs => !!configs) as Configuration[]
+        },
+        externals: [
+            nodeExternals({
+                importType: 'commonjs'
+            })
+        ]
+    }
+
+    const preload: Configuration = {
+        name: `preload`,
+        mode,
+        target: 'electron-main',
+        entry: windows
+            .filter(({ preload }) => preload)
+            .reduce(
+                (entry, { name }) => ({
+                    ...entry,
+                    [name]: {
+                        import: `./src/windows/${name}/preload.ts`,
+                        filename: `${name}/preload.js`
+                    }
+                }),
+                {}
+            ),
+        output: {
+            filename: '[name].js',
+            path: resolve(__dirname, `dist/windows`)
+        },
+        module: {
+            rules: [
+                {
+                    test: /\.ts$/,
+                    loader: 'ts-loader'
+                }
+            ]
+        },
+        resolve: {
+            extensions: ['.js', '.ts', '.json']
+        }
+    }
+
+    return [renderer, preload]
 }
